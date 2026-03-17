@@ -1,0 +1,30 @@
+{
+  "name": "@designsql/sync",
+  "version": "0.1.0",
+  "description": "CLI tool to sync database schemas with designsql cloud",
+  "type": "module",
+  "bin": {
+    "designsql": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@dbml/connector": "^6.4.0",
+    "@dbml/core": "^6.4.0",
+    "pg": "^8.20.0",
+    "mysql2": "^3.19.1",
+    "mssql": "^11.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "@types/pg": "^8.18.0",
+    "@types/mssql": "^9.1.5",
+    "tsx": "^4.7.1",
+    "typescript": "^5.9.3"
+  }
+}

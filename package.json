@@ -1,8 +1,31 @@
 {
   "name": "@designsql/sync",
   "version": "0.1.0",
-  "description": "CLI tool to sync database schemas with designsql cloud",
+  "description": "Sync database schemas with designsql cloud. Credentials never leave your machine — only schema is transmitted.",
   "type": "module",
+  "license": "MIT",
+  "author": "designsql",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/designsql/sync.git"
+  },
+  "homepage": "https://github.com/designsql/sync#readme",
+  "bugs": {
+    "url": "https://github.com/designsql/sync/issues"
+  },
+  "keywords": [
+    "database",
+    "schema",
+    "sync",
+    "dbml",
+    "postgresql",
+    "mysql",
+    "mssql",
+    "cli"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "designsql": "./dist/cli.js"
   },
@@ -11,7 +34,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/cli.ts"
+    "dev": "tsx src/cli.ts",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@dbml/connector": "^6.4.0",

@@ -61,6 +61,13 @@ designsql mysql mysql://user:pass@localhost/mydb pull tok_abc123 v2
 [OK] Done! 12 statement(s) applied, 0 skipped, 12 total
 ```
 
+> [!WARNING]
+> **Version 2.0.0+ Sync Behavior:**
+> Starting from version 2.0.0, the `pull` command performs active synchronization for PostgreSQL:
+> - **Auto-Patching**: It will automatically add missing columns to existing tables if they are present in the designsql cloud schema.
+> - **Auto-Drop**: It will **DROP** any local tables that are NOT found in the designsql cloud schema.
+> Use with caution on production databases.
+
 Statements that fail (e.g. table already exists) are skipped with a warning — the rest continue to apply.
 
 ## Supported Databases

@@ -69,7 +69,8 @@ async function main() {
   }
 
   const apiUrl =
-    process.env.DESIGNSQL_API_URL || "https://api.designsql.cloud/api/sync";
+    process.env.DESIGNSQL_API_URL ||
+    "http://localhost:3000/api/sync";
 
   try {
     if (command === "push") {
@@ -77,8 +78,20 @@ async function main() {
     } else {
       await pull(dbType, connectionString, token, projectTag, apiUrl);
     }
-  } catch (error: any) {
-    fail(error.message || String(error));
+  } catch (error: unknown) {
+    let message: string;
+    if (error instanceof Error) {
+      message = typeof error.message === "string" ? error.message : JSON.stringify(error.message);
+    } else if (typeof error === "object" && error !== null) {
+      try {
+        message = JSON.stringify(error, null, 2);
+      } catch {
+        message = String(error);
+      }
+    } else {
+      message = String(error);
+    }
+    fail(message);
     process.exit(1);
   }
 }

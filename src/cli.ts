@@ -21,7 +21,7 @@ Usage:
   designsql <database-type> <connection-string> <command> <token> [project-tag]
 
 Database types:
-  postgres, mysql, mssql, bigquery, snowflake
+  postgres, mysql, mssql
 
 Commands:
   push    Extract local DB schema and push to designsql cloud
@@ -68,7 +68,7 @@ async function main() {
     process.exit(1);
   }
 
-  const apiUrl = "https://api.designsql.app/api/sync";
+  const apiUrl = "https://api.designsql.app/sync";
 
   try {
     if (command === "push") {

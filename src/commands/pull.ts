@@ -1,6 +1,7 @@
 import { exporter } from "@dbml/core";
 import { ok, info, fail, warn } from "../utils/log.js";
 import { executeSQL } from "../utils/db.js";
+import { applyTypeMappings } from "../utils/type-mappings.js";
 
 const FORMAT_MAP: Record<string, string> = {
   postgres: "postgres",
@@ -62,13 +63,7 @@ export async function pull(
     process.exit(1);
   }
 
-  // Fix @dbml/core quoting bug for PostgreSQL types
-  if (exportFormat === "postgres") {
-    // Replace "TYPE" with TYPE for common quoted types like "VARCHAR(50)", "INT4", etc.
-    sql = sql.replace(/"(VARCHAR\(\d+\)|INT[248]|NUMERIC\(\d+(?:,\s*\d+)?\)|TIMESTAMP|TEXT|BOOLEAN|INTEGER|SERIAL|JSONB?|UUID|DATE)"/gi, "$1");
-    // Also handle cases like "CHARACTER VARYING" or other common patterns if needed
-    sql = sql.replace(/"(CHARACTER VARYING|DOUBLE PRECISION|TIMESTAMP WITH TIME ZONE|TIMESTAMP WITHOUT TIME ZONE)"/gi, "$1");
-  }
+  sql = applyTypeMappings(sql, dbType);
 
   if (!sql.trim()) {
     warn("Generated SQL is empty. Check if the DBML contains compatible elements for this database type.");

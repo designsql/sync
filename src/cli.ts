@@ -68,7 +68,7 @@ async function main() {
     process.exit(1);
   }
 
-  const apiUrl = "https://api.designsql.app/sync";
+  const apiUrl = "https://api.designsql.cloud/api/sync";
 
   try {
     if (command === "push") {

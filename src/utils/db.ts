@@ -14,6 +14,22 @@ function splitStatements(sql: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+/**
+ * Split MSSQL SQL that uses GO as batch separator (@dbml/core export format).
+ * Falls back to semicolon splitting if no GO separators are found.
+ */
+function splitStatementsMssql(sql: string): string[] {
+  // Check if the SQL uses GO as batch separator
+  if (/^GO\s*$/m.test(sql)) {
+    return sql
+      .split(/^GO\s*$/m)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+  // Fallback to semicolon splitting
+  return splitStatements(sql);
+}
+
 function splitByComma(str: string): string[] {
   const parts: string[] = [];
   let depth = 0;
@@ -311,21 +327,40 @@ async function executeMssql(
   };
 
   // Drop tables not in cloud
+  // MSSQL doesn't support CASCADE — must drop FK constraints first
   const { recordset: rows } = await pool.request().query(`
     SELECT table_name FROM information_schema.tables 
     WHERE table_catalog = DB_NAME() AND table_type = 'BASE TABLE' AND table_schema = 'dbo'
   `);
 
-  for (const row of rows) {
-    const inCloud = cloudTables.some((t) => t.table === row.table_name);
-    if (!inCloud) {
-      await pool.request().query(`DROP TABLE [${row.table_name}]`);
-      warn(`Dropped (not in cloud): [${row.table_name}]`);
-      result.dropped++;
+  const tablesToDrop = rows.filter(
+    (row: any) => !cloudTables.some((t) => t.table === row.table_name)
+  );
+
+  // First pass: drop all FK constraints referencing tables we want to drop
+  for (const row of tablesToDrop) {
+    const { recordset: fks } = await pool.request().query(`
+      SELECT fk.name AS fk_name, OBJECT_NAME(fk.parent_object_id) AS source_table
+      FROM sys.foreign_keys fk
+      WHERE OBJECT_NAME(fk.referenced_object_id) = '${row.table_name}'
+    `);
+    for (const fk of fks) {
+      await pool.request().query(`ALTER TABLE [${fk.source_table}] DROP CONSTRAINT [${fk.fk_name}]`);
     }
   }
 
-  const statements = splitStatements(sql);
+  // Second pass: drop the tables
+  for (const row of tablesToDrop) {
+    try {
+      await pool.request().query(`DROP TABLE [${row.table_name}]`);
+      warn(`Dropped (not in cloud): [${row.table_name}]`);
+      result.dropped++;
+    } catch (err: any) {
+      warn(`Failed to drop [${row.table_name}]: ${err.message}`);
+    }
+  }
+
+  const statements = splitStatementsMssql(sql);
   result.total = statements.length;
 
   for (const stmt of statements) {

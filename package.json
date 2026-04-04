@@ -1,6 +1,6 @@
 {
   "name": "@designsql/sync",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Sync database schemas with designsql cloud. Credentials never leave your machine — only schema is transmitted.",
   "type": "module",
   "license": "MIT",

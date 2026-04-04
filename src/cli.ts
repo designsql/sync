@@ -68,9 +68,7 @@ async function main() {
     process.exit(1);
   }
 
-  const apiUrl =
-    process.env.DESIGNSQL_API_URL ||
-    "http://localhost:3000/api/sync";
+  const apiUrl = "https://api.designsql.app/api/sync";
 
   try {
     if (command === "push") {

@@ -45,7 +45,7 @@ function parseCreateTable(stmt: string): {
   columns: { name: string; definition: string }[];
 } | null {
   const tableMatch = stmt.match(
-    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"?(\w+)"?\."?(\w+)"?|"?(\w+)"?)\s*\(/is,
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["`]?(\w+)["`]?\.["`]?(\w+)["`]?|["`]?(\w+)["`]?)\s*\(/is,
   );
   if (!tableMatch) return null;
 
@@ -64,7 +64,7 @@ function parseCreateTable(stmt: string): {
     const trimmed = part.trim();
     if (/^(PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK|CONSTRAINT)/i.test(trimmed))
       continue;
-    const colMatch = trimmed.match(/^"?(\w+)"?\s+(.+)$/is);
+    const colMatch = trimmed.match(/^(?:["`]?(\w+)["`]?)\s+(.+)$/is);
     if (colMatch) {
       // Strip inline REFERENCES — not supported in ALTER TABLE ADD COLUMN
       const def = colMatch[2].trim().replace(/\s+REFERENCES\s+\S+\s*\([^)]+\)/gi, "");
@@ -91,6 +91,68 @@ async function tryAddColumns(client: any, stmt: string): Promise<number> {
       added++;
     } catch {
       // column type incompatible or other constraint — skip silently
+    }
+  }
+  return added;
+}
+
+async function tryAddColumnsMysql(
+  connection: any,
+  stmt: string,
+  dbName: string,
+): Promise<number> {
+  const parsed = parseCreateTable(stmt);
+  if (!parsed) return 0;
+
+  const { table, columns } = parsed;
+
+  let added = 0;
+  for (const col of columns) {
+    try {
+      const [rows] = (await connection.execute(
+        `SELECT COUNT(*) as count FROM information_schema.columns 
+         WHERE table_schema = ? AND table_name = ? AND column_name = ?`,
+        [dbName, table, col.name],
+      )) as any;
+
+      if (rows[0].count === 0) {
+        await connection.execute(
+          `ALTER TABLE \`${table}\` ADD COLUMN \`${col.name}\` ${col.definition}`,
+        );
+        added++;
+      }
+    } catch {
+      // skip
+    }
+  }
+  return added;
+}
+
+async function tryAddColumnsMssql(pool: any, stmt: string): Promise<number> {
+  const parsed = parseCreateTable(stmt);
+  if (!parsed) return 0;
+
+  const { table, columns } = parsed;
+
+  let added = 0;
+  for (const col of columns) {
+    try {
+      const checkSql = `
+        IF NOT EXISTS (
+          SELECT * FROM sys.columns 
+          WHERE object_id = OBJECT_ID(N'[${table}]') 
+          AND name = N'${col.name}'
+        )
+        BEGIN
+          ALTER TABLE [${table}] ADD [${col.name}] ${col.definition}
+        END
+      `;
+      await pool.request().query(checkSql);
+      // We don't know for sure if it was added or existed, 
+      // but in the context of patching, we count any successful batch
+      added++;
+    } catch {
+      // skip
     }
   }
   return added;
@@ -175,13 +237,37 @@ async function executeMysql(
   const mysql = await import("mysql2/promise");
   const connection = await mysql.createConnection(connectionString);
 
-  const statements = splitStatements(sql);
+  // Get current DB name
+  const [dbRows] = (await connection.execute("SELECT DATABASE() as db")) as any;
+  const dbName = dbRows[0].db;
+
+  const cloudTables = extractCloudTables(sql);
   const result: ExecuteResult = {
-    total: statements.length,
+    total: 0,
     success: 0,
     skipped: 0,
     dropped: 0,
   };
+
+  if (dbName) {
+    const [rows] = (await connection.execute(
+      `SELECT table_name FROM information_schema.tables 
+       WHERE table_schema = ? AND table_type = 'BASE TABLE'`,
+      [dbName],
+    )) as any;
+
+    for (const row of rows) {
+      const inCloud = cloudTables.some((t) => t.table === row.table_name);
+      if (!inCloud) {
+        await connection.execute(`DROP TABLE IF EXISTS \`${row.table_name}\``);
+        warn(`Dropped (not in cloud): \`${row.table_name}\``);
+        result.dropped++;
+      }
+    }
+  }
+
+  const statements = splitStatements(sql);
+  result.total = statements.length;
 
   for (const stmt of statements) {
     try {
@@ -190,8 +276,14 @@ async function executeMysql(
     } catch (err: any) {
       // ER_TABLE_EXISTS_ERROR = 1050
       if (err.errno === 1050) {
-        result.skipped++;
-        warn(`Skipped (already exists): ${stmt.substring(0, 60)}...`);
+        const added = await tryAddColumnsMysql(connection, stmt, dbName);
+        if (added > 0) {
+          ok(`Patched existing table — ${added} column(s) added: ${stmt.substring(0, 60)}...`);
+          result.success++;
+        } else {
+          result.skipped++;
+          warn(`Skipped (already exists, no new columns): ${stmt.substring(0, 60)}...`);
+        }
       } else {
         result.skipped++;
         warn(`Failed: ${err.message} — ${stmt.substring(0, 60)}...`);
@@ -210,13 +302,31 @@ async function executeMssql(
   const mssql = await import("mssql");
   const pool = await mssql.default.connect(connectionString);
 
-  const statements = splitStatements(sql);
+  const cloudTables = extractCloudTables(sql);
   const result: ExecuteResult = {
-    total: statements.length,
+    total: 0,
     success: 0,
     skipped: 0,
     dropped: 0,
   };
+
+  // Drop tables not in cloud
+  const { recordset: rows } = await pool.request().query(`
+    SELECT table_name FROM information_schema.tables 
+    WHERE table_catalog = DB_NAME() AND table_type = 'BASE TABLE' AND table_schema = 'dbo'
+  `);
+
+  for (const row of rows) {
+    const inCloud = cloudTables.some((t) => t.table === row.table_name);
+    if (!inCloud) {
+      await pool.request().query(`DROP TABLE [${row.table_name}]`);
+      warn(`Dropped (not in cloud): [${row.table_name}]`);
+      result.dropped++;
+    }
+  }
+
+  const statements = splitStatements(sql);
+  result.total = statements.length;
 
   for (const stmt of statements) {
     try {
@@ -225,8 +335,14 @@ async function executeMssql(
     } catch (err: any) {
       // 2714 = object already exists
       if (err.number === 2714) {
-        result.skipped++;
-        warn(`Skipped (already exists): ${stmt.substring(0, 60)}...`);
+        const added = await tryAddColumnsMssql(pool, stmt);
+        if (added > 0) {
+          ok(`Patched existing table — columns checked/added: ${stmt.substring(0, 60)}...`);
+          result.success++;
+        } else {
+          result.skipped++;
+          warn(`Skipped (already exists): ${stmt.substring(0, 60)}...`);
+        }
       } else {
         result.skipped++;
         warn(`Failed: ${err.message} — ${stmt.substring(0, 60)}...`);

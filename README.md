@@ -18,7 +18,7 @@ designsql <database-type> <connection-string> <command> <token> [project-tag]
 
 | Parameter           | Position | Description                                                          |
 | ------------------- | -------- | -------------------------------------------------------------------- |
-| `database-type`     | 1        | Database type: `postgres`, `mysql`, `mssql`, `bigquery`, `snowflake` |
+| `database-type`     | 1        | Database type: `postgres`, `mysql`, `mssql` (bigquery, snowflake coming soon) |
 | `connection-string` | 2        | Standard database connection URL                                     |
 | `command`           | 3        | `push` or `pull`                                                     |
 | `token`             | 4        | Sync token from designsql project settings                           |
@@ -63,7 +63,7 @@ designsql mysql mysql://user:pass@localhost/mydb pull tok_abc123 v2
 
 > [!WARNING]
 > **Version 2.0.0+ Sync Behavior:**
-> Starting from version 2.0.0, the `pull` command performs active synchronization for PostgreSQL:
+> Starting from version 2.0.0, the `pull` command performs active synchronization for **PostgreSQL, MySQL, and MSSQL**:
 > - **Auto-Patching**: It will automatically add missing columns to existing tables if they are present in the designsql cloud schema.
 > - **Auto-Drop**: It will **DROP** any local tables that are NOT found in the designsql cloud schema.
 > Use with caution on production databases.
@@ -77,8 +77,8 @@ Statements that fail (e.g. table already exists) are skipped with a warning — 
 | PostgreSQL | Yes                   | Yes                   |
 | MySQL      | Yes                   | Yes                   |
 | MSSQL      | Yes                   | Yes                   |
-| BigQuery   | Yes                   | Output DBML only      |
-| Snowflake  | Yes                   | Output DBML only      |
+<!-- | BigQuery   | Yes                   | Output DBML only      |
+| Snowflake  | Yes                   | Output DBML only      | -->
 
 ## License
 
